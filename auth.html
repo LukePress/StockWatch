@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StockWatch — Login</title>
+
+  <!-- ============================================================
+    FIREBASE SETUP (Step 1 of 2)
+    These are the official Firebase SDK scripts loaded from Google's CDN.
+    "compat" versions let us use the older firebase.auth() style syntax
+    which is simpler for beginners. We load:
+      - firebase-app     → core Firebase
+      - firebase-auth    → Authentication (login/signup/logout)
+      - firebase-firestore → Database (we'll use this in later pages)
+  ============================================================ -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── CSS VARIABLES ─────────────────────────────────────────
+       All colors and fonts defined here so you can retheme the
+       entire app by changing just these values.
+    ─────────────────────────────────────────────────────────── */
+    :root {
+      --bg:          #090e14;
+      --surface:     #0d1520;
+      --border:      #1a2840;
+      --accent:      #00d084;
+      --accent-dim:  #00903b;
+      --danger:      #ff4d6a;
+      --text:        #e8f0fe;
+      --text-muted:  #5a7498;
+      --font-display: 'Syne', sans-serif;
+      --font-mono:    'DM Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── ANIMATED BACKGROUND GRID ──────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.4;
+      animation: gridDrift 20s linear infinite;
+    }
+
+    @keyframes gridDrift {
+      from { background-position: 0 0; }
+      to   { background-position: 48px 48px; }
+    }
+
+    /* ── GLOWING ORBS ──────────────────────────────────────── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .orb-1 {
+      width: 400px; height: 400px;
+      background: rgba(0, 208, 132, 0.08);
+      top: -100px; left: -100px;
+      animation: orbFloat 12s ease-in-out infinite;
+    }
+    .orb-2 {
+      width: 300px; height: 300px;
+      background: rgba(0, 120, 200, 0.07);
+      bottom: -80px; right: -80px;
+      animation: orbFloat 16s ease-in-out infinite reverse;
+    }
+
+    @keyframes orbFloat {
+      0%, 100% { transform: translate(0, 0); }
+      50%       { transform: translate(30px, -30px); }
+    }
+
+    /* ── CARD WRAPPER ──────────────────────────────────────── */
+    .auth-wrapper {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 440px;
+      padding: 24px;
+      animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── LOGO ──────────────────────────────────────────────── */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-icon svg {
+      width: 20px; height: 20px;
+      fill: var(--bg);
+    }
+
+    .logo-text {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+
+    .logo-text span {
+      color: var(--accent);
+    }
+
+    /* ── CARD ──────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      box-shadow:
+        0 0 0 1px rgba(0,208,132,0.04),
+        0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    /* ── TAB SWITCHER (Login / Sign Up) ────────────────────── */
+    .tabs {
+      display: flex;
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 32px;
+      border: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px;
+      background: transparent;
+      border: none;
+      border-radius: 7px;
+      color: var(--text-muted);
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.3px;
+    }
+
+    /* Active tab gets highlighted */
+    .tab-btn.active {
+      background: var(--surface);
+      color: var(--accent);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    /* ── FORM GROUPS ───────────────────────────────────────── */
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      padding: 13px 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0, 208, 132, 0.1);
+    }
+
+    input::placeholder { color: var(--text-muted); }
+
+    /* ── PRIMARY BUTTON ────────────────────────────────────── */
+    .btn-primary {
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 10px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary:hover {
+      background: #00e894;
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(0, 208, 132, 0.3);
+    }
+
+    .btn-primary:active { transform: translateY(0); }
+
+    /* Loading spinner inside the button */
+    .btn-primary.loading {
+      pointer-events: none;
+      opacity: 0.7;
+    }
+
+    .btn-primary.loading::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: inherit;
+      border-radius: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── DIVIDER ───────────────────────────────────────────── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── GOOGLE SIGN-IN BUTTON ─────────────────────────────── */
+    .btn-google {
+      width: 100%;
+      padding: 13px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.2s;
+    }
+
+    .btn-google:hover {
+      border-color: #5a7498;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .btn-google svg {
+      width: 18px; height: 18px;
+    }
+
+    /* ── FORGOT PASSWORD LINK ──────────────────────────────── */
+    .forgot-link {
+      text-align: right;
+      margin-top: -10px;
+      margin-bottom: 18px;
+    }
+
+    .forgot-link a {
+      color: var(--text-muted);
+      font-size: 12px;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .forgot-link a:hover { color: var(--accent); }
+
+    /* ── ERROR / SUCCESS MESSAGE BOX ───────────────────────── */
+    .message-box {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 18px;
+      display: none; /* hidden by default, JS shows it */
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-box.error {
+      display: block;
+      background: rgba(255, 77, 106, 0.1);
+      border: 1px solid rgba(255, 77, 106, 0.3);
+      color: var(--danger);
+    }
+
+    .message-box.success {
+      display: block;
+      background: rgba(0, 208, 132, 0.1);
+      border: 1px solid rgba(0, 208, 132, 0.3);
+      color: var(--accent);
+    }
+
+    /* ── TICKER TAPE AT BOTTOM ─────────────────────────────── */
+    .ticker-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 8px 0;
+      overflow: hidden;
+      z-index: 10;
+    }
+
+    .ticker-track {
+      display: flex;
+      gap: 40px;
+      animation: ticker 30s linear infinite;
+      width: max-content;
+    }
+
+    @keyframes ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    .ticker-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      white-space: nowrap;
+      color: var(--text-muted);
+    }
+
+    .ticker-item .sym {
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .ticker-item .up   { color: var(--accent); }
+    .ticker-item .down { color: var(--danger); }
+  </style>
+</head>
+
+<body>
+
+  <!-- Decorative blurred orbs in background -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <!-- ── MAIN AUTH CARD ──────────────────────────────────────── -->
+  <div class="auth-wrapper">
+
+    <!-- Logo -->
+    <div class="logo">
+      <div class="logo-icon">
+        <!-- Simple candlestick chart icon -->
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="8"  width="4" height="10" rx="1"/>
+          <rect x="10" y="4" width="4" height="14" rx="1"/>
+          <rect x="17" y="6" width="4" height="9"  rx="1"/>
+          <rect x="4.5" y="4"  width="1" height="5"/>
+          <rect x="4.5" y="17" width="1" height="4"/>
+          <rect x="11.5" y="1" width="1" height="4"/>
+          <rect x="11.5" y="17" width="1" height="4"/>
+          <rect x="18.5" y="3" width="1" height="4"/>
+          <rect x="18.5" y="14" width="1" height="4"/>
+        </svg>
+      </div>
+      <div class="logo-text">Stock<span>Watch</span></div>
+    </div>
+
+    <!-- Card -->
+    <div class="card">
+
+      <!-- Login / Sign Up Toggle Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" id="loginTab"  onclick="switchTab('login')">Log In</button>
+        <button class="tab-btn"        id="signupTab" onclick="switchTab('signup')">Sign Up</button>
+      </div>
+
+      <!-- Error / success messages appear here -->
+      <div class="message-box" id="msgBox"></div>
+
+      <!-- ── LOGIN FORM ──────────────────────────────────────── -->
+      <form id="loginForm" onsubmit="handleLogin(event)">
+
+        <div class="form-group">
+          <label for="loginEmail">Email</label>
+          <input id="loginEmail" type="email" placeholder="you@example.com" required />
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" type="password" placeholder="••••••••" required />
+        </div>
+
+        <!-- Forgot password triggers Firebase's password reset email -->
+        <div class="forgot-link">
+          <a href="#" onclick="handleForgotPassword(event)">Forgot password?</a>
+        </div>
+
+        <button type="submit" class="btn-primary" id="loginBtn">Log In</button>
+
+        <div class="divider">or</div>
+
+        <!-- Google Sign-In — Firebase handles all the OAuth flow -->
+        <button type="button" class="btn-google" onclick="handleGoogleSignIn()">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          Continue with Google
+        </button>
+
+      </form>
+
+      <!-- ── SIGN UP FORM (hidden by default) ───────────────── -->
+      <form id="signupForm" style="display:none" onsubmit="handleSignup(event)">
+
+        <div class="form-group">
+          <label for="signupName">Full Name</label>
+          <input id="signupName" type="text" placeholder="Jane Doe" required />
+        </div>
+
+        <div class="form-group">
+          <label for="signupEmail">Email</label>
+          <input id="signupEmail" type="email" placeholder="you@example.com" required />
+        </div>
+
+        <div class="form-group">
+          <label for="signupPassword">Password</label>
+          <input id="signupPassword" type="password" placeholder="Min. 6 characters" required minlength="6"/>
+        </div>
+
+        <div class="form-group">
+          <label for="confirmPassword">Confirm Password</label>
+          <input id="confirmPassword" type="password" placeholder="Repeat password" required />
+        </div>
+
+        <button type="submit" class="btn-primary" id="signupBtn">Create Account</button>
+
+        <div class="divider">or</div>
+
+        <button type="button" class="btn-google" onclick="handleGoogleSignIn()">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          Continue with Google
+        </button>
+
+      </form>
+
+    </div><!-- /card -->
+  </div><!-- /auth-wrapper -->
+
+  <!-- ── FAKE TICKER TAPE ────────────────────────────────────── -->
+  <!-- This is static placeholder data for now.
+       When you build the dashboard, replace this with live Yahoo Finance API calls. -->
+  <div class="ticker-bar">
+    <div class="ticker-track" id="ticker">
+      <!-- Items are duplicated by JS below to create the infinite scroll loop -->
+    </div>
+  </div>
+
+
+  <script>
+    // ============================================================
+    //  FIREBASE CONFIGURATION  ← YOU NEED TO FILL THIS IN
+    // ============================================================
+    //  HOW TO GET YOUR CONFIG:
+    //    1. Go to console.firebase.google.com
+    //    2. Click your project → Project Settings (gear icon, top left)
+    //    3. Scroll down to "Your apps" → click the </> Web icon
+    //    4. Register the app (give it a name like "StockWatch Web")
+    //    5. Copy the firebaseConfig object and paste it below,
+    //       replacing each "REPLACE_ME" value.
+    // ============================================================
+    const firebaseConfig = {
+      apiKey:            "AIzaSyDG5CeNSOwLV7HRtIAodjaRL9kbRhVXDg4",
+      authDomain:        "stockwatcher-8f664.firebaseapp.com",
+      projectId:         "stockwatcher-8f664",
+      storageBucket:     "stockwatcher-8f664.firebasestorage.app",
+      messagingSenderId: "856908208430",
+      appId:             "1:856908208430:web:fe7e3890172b68e1bf82bf",
+      measurementId:     "G-X39EJ8NBRB"   // Google Analytics (optional but included)
+    };
+
+    // Initialize Firebase — this MUST happen before any auth calls
+    firebase.initializeApp(firebaseConfig);
+
+    // Get references to the services we'll use on this page
+    const auth = firebase.auth();           // Authentication service
+    const db   = firebase.firestore();      // Firestore database service
+
+    // ── GOOGLE SIGN-IN PROVIDER SETUP ────────────────────────
+    // Tell Firebase we want to use Google as a sign-in option.
+    // NOTE: You also need to enable Google in Firebase Console:
+    //   Authentication → Sign-in method → Google → Enable
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
+
+
+    // ============================================================
+    //  AUTH STATE LISTENER
+    // ============================================================
+    //  Firebase automatically persists login sessions in the browser.
+    //  This listener fires every time the auth state changes
+    //  (login, logout, page refresh). If a user is already logged in
+    //  when they visit this page, we send them straight to the dashboard.
+    // ============================================================
+    auth.onAuthStateChanged((user) => {
+      if (user) {
+        // User is signed in — redirect to dashboard
+        // TODO: Change this path to wherever your dashboard page lives
+        window.location.href = 'dashboard.html';
+      }
+      // If user is null, do nothing — let them see the login page
+    });
+
+
+    // ============================================================
+    //  TAB SWITCHER (Login ↔ Sign Up)
+    // ============================================================
+    function switchTab(tab) {
+      const isLogin = tab === 'login';
+
+      // Toggle which form is visible
+      document.getElementById('loginForm').style.display  = isLogin ? 'block' : 'none';
+      document.getElementById('signupForm').style.display = isLogin ? 'none'  : 'block';
+
+      // Toggle active styling on the tab buttons
+      document.getElementById('loginTab').classList.toggle('active',  isLogin);
+      document.getElementById('signupTab').classList.toggle('active', !isLogin);
+
+      // Clear any messages when switching tabs
+      clearMessage();
+    }
+
+
+    // ============================================================
+    //  HELPER: Show / Clear Messages
+    // ============================================================
+    function showMessage(text, type = 'error') {
+      const box = document.getElementById('msgBox');
+      box.textContent = text;
+      box.className = `message-box ${type}`;
+    }
+
+    function clearMessage() {
+      const box = document.getElementById('msgBox');
+      box.className = 'message-box';
+      box.textContent = '';
+    }
+
+    // Translate Firebase's cryptic error codes into human-friendly messages
+    function friendlyError(code) {
+      const map = {
+        'auth/invalid-email':            'That doesn\'t look like a valid email.',
+        'auth/user-not-found':           'No account found with that email.',
+        'auth/wrong-password':           'Incorrect password. Try again.',
+        'auth/email-already-in-use':     'An account already exists with that email.',
+        'auth/weak-password':            'Password must be at least 6 characters.',
+        'auth/too-many-requests':        'Too many attempts. Please wait a moment.',
+        'auth/popup-closed-by-user':     'Sign-in popup was closed. Try again.',
+        'auth/network-request-failed':   'Network error. Check your connection.',
+        'auth/invalid-credential':       'Email or password is incorrect.',
+      };
+      return map[code] || 'Something went wrong. Please try again.';
+    }
+
+
+    // ============================================================
+    //  LOGIN HANDLER
+    // ============================================================
+    //  Firebase function: auth.signInWithEmailAndPassword(email, pass)
+    //  Returns a Promise. On success, onAuthStateChanged fires above
+    //  and redirects to the dashboard.
+    // ============================================================
+    async function handleLogin(event) {
+      event.preventDefault(); // Stop the page from refreshing
+      clearMessage();
+
+      const email    = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      const btn      = document.getElementById('loginBtn');
+
+      // Show loading state
+      btn.textContent = 'Logging in...';
+      btn.classList.add('loading');
+
+      try {
+        // ← This is the Firebase call that actually logs the user in
+        await auth.signInWithEmailAndPassword(email, password);
+        // If we get here, login worked! onAuthStateChanged will redirect.
+
+      } catch (err) {
+        // Login failed — show a friendly error message
+        showMessage(friendlyError(err.code), 'error');
+        btn.textContent = 'Log In';
+        btn.classList.remove('loading');
+      }
+    }
+
+
+    // ============================================================
+    //  SIGN UP HANDLER
+    // ============================================================
+    //  Firebase function: auth.createUserWithEmailAndPassword(email, pass)
+    //  After creating the auth account, we also create a Firestore
+    //  document to store the user's profile data (name, portfolio, etc.)
+    // ============================================================
+    async function handleSignup(event) {
+      event.preventDefault();
+      clearMessage();
+
+      const name     = document.getElementById('signupName').value.trim();
+      const email    = document.getElementById('signupEmail').value.trim();
+      const password = document.getElementById('signupPassword').value;
+      const confirm  = document.getElementById('confirmPassword').value;
+      const btn      = document.getElementById('signupBtn');
+
+      // Client-side password match check before hitting Firebase
+      if (password !== confirm) {
+        showMessage('Passwords do not match.', 'error');
+        return;
+      }
+
+      btn.textContent = 'Creating account...';
+      btn.classList.add('loading');
+
+      try {
+        // Step 1: Create the user in Firebase Authentication
+        // Firebase stores their email + hashed password securely
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+
+        // Step 2: Update the user's display name in Firebase Auth
+        await user.updateProfile({ displayName: name });
+
+        // Step 3: Create a Firestore document for this user
+        // We store extra profile info that Firebase Auth doesn't handle.
+        // The document ID is the user's unique UID (Firebase generates this).
+        //
+        // Firestore path: users/{uid}
+        // You can later query this like: db.collection('users').doc(uid).get()
+        await db.collection('users').doc(user.uid).set({
+          name:          name,
+          email:         email,
+          createdAt:     firebase.firestore.FieldValue.serverTimestamp(),
+          cashBalance:   10000,   // Every new user starts with $10,000 simulated cash
+          portfolio:     {},       // Empty portfolio — will fill as they make trades
+          watchlist:     [],       // Empty watchlist
+        });
+
+        // onAuthStateChanged will fire and redirect to dashboard
+        showMessage('Account created! Redirecting...', 'success');
+
+      } catch (err) {
+        showMessage(friendlyError(err.code), 'error');
+        btn.textContent = 'Create Account';
+        btn.classList.remove('loading');
+      }
+    }
+
+
+    // ============================================================
+    //  GOOGLE SIGN-IN HANDLER
+    // ============================================================
+    //  Firebase opens a popup window, handles the entire OAuth flow
+    //  with Google, and returns a user object. We then check if this
+    //  is a brand new user and create their Firestore doc if needed.
+    // ============================================================
+    async function handleGoogleSignIn() {
+      clearMessage();
+      try {
+        // This opens the Google sign-in popup
+        const result = await auth.signInWithPopup(googleProvider);
+        const user   = result.user;
+
+        // result.additionalUserInfo.isNewUser is true only on first login
+        if (result.additionalUserInfo.isNewUser) {
+          // Create their Firestore profile doc (same as signup above)
+          await db.collection('users').doc(user.uid).set({
+            name:        user.displayName || 'Trader',
+            email:       user.email,
+            createdAt:   firebase.firestore.FieldValue.serverTimestamp(),
+            cashBalance: 10000,
+            portfolio:   {},
+            watchlist:   [],
+          });
+        }
+        // onAuthStateChanged fires → redirects to dashboard
+
+      } catch (err) {
+        showMessage(friendlyError(err.code), 'error');
+      }
+    }
+
+
+    // ============================================================
+    //  FORGOT PASSWORD HANDLER
+    // ============================================================
+    //  Firebase sends an email with a password reset link.
+    //  You don't need to build any reset UI yourself — Firebase handles it.
+    // ============================================================
+    async function handleForgotPassword(event) {
+      event.preventDefault();
+      clearMessage();
+
+      const email = document.getElementById('loginEmail').value.trim();
+
+      if (!email) {
+        showMessage('Enter your email above first, then click Forgot Password.', 'error');
+        return;
+      }
+
+      try {
+        // ← Firebase sends the reset email automatically
+        await auth.sendPasswordResetEmail(email);
+        showMessage('Password reset email sent! Check your inbox.', 'success');
+      } catch (err) {
+        showMessage(friendlyError(err.code), 'error');
+      }
+    }
+
+
+    // ============================================================
+    //  TICKER TAPE — Static placeholder data
+    //  Replace the tickers array with real Yahoo Finance API data
+    //  on the dashboard page.
+    // ============================================================
+    const tickers = [
+      { sym: 'AAPL',  price: '213.49', change: '+1.24%', up: true  },
+      { sym: 'TSLA',  price: '248.73', change: '-0.87%', up: false },
+      { sym: 'GOOGL', price: '174.20', change: '+0.53%', up: true  },
+      { sym: 'AMZN',  price: '198.11', change: '+2.10%', up: true  },
+      { sym: 'MSFT',  price: '415.85', change: '-0.22%', up: false },
+      { sym: 'NVDA',  price: '875.32', change: '+3.45%', up: true  },
+      { sym: 'META',  price: '521.77', change: '+1.02%', up: true  },
+      { sym: 'NFLX',  price: '634.50', change: '-1.55%', up: false },
+    ];
+
+    // Build the ticker HTML (items doubled to create seamless loop)
+    const track = document.getElementById('ticker');
+    const makeItems = () => tickers.map(t => `
+      <div class="ticker-item">
+        <span class="sym">${t.sym}</span>
+        <span>$${t.price}</span>
+        <span class="${t.up ? 'up' : 'down'}">${t.change}</span>
+      </div>
+    `).join('');
+
+    // Duplicate content so the CSS animation loops seamlessly
+    track.innerHTML = makeItems() + makeItems();
+  </script>
+
+</body>
+</html>
