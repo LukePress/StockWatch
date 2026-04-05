@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StockWatch — Dashboard</title>
+
+  <script src="config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg:           #090e14;
+      --surface:      #0d1520;
+      --surface-2:    #111d2e;
+      --border:       #1a2840;
+      --accent:       #00d084;
+      --accent-dim:   rgba(0,208,132,0.1);
+      --danger:       #ff4d6a;
+      --danger-dim:   rgba(255,77,106,0.1);
+      --text:         #e8f0fe;
+      --text-muted:   #5a7498;
+      --font-display: 'Syne', sans-serif;
+      --font-mono:    'DM Mono', monospace;
+      --sidebar:      220px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; display: flex; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: var(--sidebar);
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 12px;
+      position: fixed;
+      top: 0; left: 0;
+    }
+
+    .logo { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 28px; }
+
+    .logo-icon { width: 30px; height: 30px; background: var(--accent); border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+    .logo-icon svg { width: 16px; height: 16px; fill: var(--bg); }
+
+    .logo-text { font-family: var(--font-display); font-weight: 800; font-size: 17px; }
+    .logo-text span { color: var(--accent); }
+
+    .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 0 10px; margin: 20px 0 6px; }
+
+    .nav-link { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; color: var(--text-muted); text-decoration: none; font-size: 13px; transition: all 0.15s; margin-bottom: 2px; }
+    .nav-link svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .nav-link:hover { background: var(--surface-2); color: var(--text); }
+    .nav-link.active { background: var(--accent-dim); color: var(--accent); }
+
+    .sidebar-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+
+    .btn-logout { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; background: transparent; border: none; color: var(--text-muted); font-family: var(--font-mono); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+    .btn-logout:hover { background: var(--danger-dim); color: var(--danger); }
+    .btn-logout svg { width: 17px; height: 17px; }
+
+    /* ── MAIN ── */
+    .main { margin-left: var(--sidebar); flex: 1; padding: 32px; padding-bottom: 60px; animation: fadeIn 0.4s ease both; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+
+    .page-header h1 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.5px; }
+    .page-header h1 span { color: var(--text-muted); font-weight: 400; }
+
+    .user-badge { display: flex; align-items: center; gap: 10px; padding: 7px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 50px; }
+
+    .user-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; font-size: 11px; color: var(--bg); }
+
+    /* ── STAT CARDS ── */
+    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; transition: border-color 0.2s; }
+    .stat-card:hover { border-color: var(--accent); }
+
+    .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; }
+    .stat-value { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -1px; }
+    .stat-value.green { color: var(--accent); }
+    .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ── QUICK ACTIONS ── */
+    .actions-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+
+    .action-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; color: var(--text-muted); text-decoration: none; font-family: var(--font-display); font-weight: 600; font-size: 13px; transition: all 0.2s; }
+    .action-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); transform: translateY(-2px); }
+    .action-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+
+    /* ── TWO COLUMN LAYOUT ── */
+    .grid-2col { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
+
+    /* ── CARD ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+
+    .card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+    .card-title { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+    .card-link { font-size: 12px; color: var(--accent); text-decoration: none; }
+    .card-link:hover { opacity: 0.7; }
+
+    /* ── PORTFOLIO TABLE ── */
+    table { width: 100%; border-collapse: collapse; }
+
+    th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 10px 20px; border-bottom: 1px solid var(--border); font-weight: 500; }
+    th:last-child { text-align: right; }
+
+    td { padding: 14px 20px; font-size: 13px; border-bottom: 1px solid rgba(26,40,64,0.4); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-2); }
+    td:last-child { text-align: right; }
+
+    .stock-sym  { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+    .stock-name { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    .green { color: var(--accent); }
+    .red   { color: var(--danger); }
+
+    /* ── WATCHLIST ── */
+    .watchlist-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid rgba(26,40,64,0.4); text-decoration: none; color: var(--text); transition: background 0.15s; }
+    .watchlist-item:last-child { border-bottom: none; }
+    .watchlist-item:hover { background: var(--surface-2); }
+
+    .watch-sym  { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+    .watch-name { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .watch-price { font-size: 14px; font-weight: 500; text-align: right; }
+    .watch-change { font-size: 11px; text-align: right; margin-top: 2px; }
+
+    /* ── EMPTY STATE ── */
+    .empty { text-align: center; padding: 36px 20px; color: var(--text-muted); font-size: 13px; }
+    .empty a { display: inline-block; margin-top: 12px; padding: 8px 18px; background: var(--accent); color: var(--bg); border-radius: 8px; font-family: var(--font-display); font-weight: 700; font-size: 13px; text-decoration: none; }
+
+    /* ── TICKER BAR ── */
+    .ticker-bar { position: fixed; bottom: 0; left: var(--sidebar); right: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 7px 0; overflow: hidden; z-index: 50; }
+    .ticker-track { display: flex; gap: 36px; animation: ticker 30s linear infinite; width: max-content; }
+
+    @keyframes ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    .ticker-item { display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; color: var(--text-muted); }
+    .ticker-item .sym { font-family: var(--font-display); font-weight: 700; color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <!-- ── SIDEBAR ── -->
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><rect x="3" y="8" width="4" height="10" rx="1"/><rect x="10" y="4" width="4" height="14" rx="1"/><rect x="17" y="6" width="4" height="9" rx="1"/><rect x="4.5" y="4" width="1" height="5"/><rect x="4.5" y="17" width="1" height="4"/><rect x="11.5" y="1" width="1" height="4"/><rect x="11.5" y="17" width="1" height="4"/><rect x="18.5" y="3" width="1" height="4"/><rect x="18.5" y="14" width="1" height="4"/></svg>
+      </div>
+      <div class="logo-text">Stock<span>Watch</span></div>
+    </div>
+
+    <span class="nav-label">Main</span>
+    <a href="dashboard.html" class="nav-link active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a>
+    <a href="trade.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      Trade
+    </a>
+    <a href="history.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
+    </a>
+
+    <span class="nav-label">Tools</span>
+    <a href="news.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+      News
+    </a>
+    <a href="ai.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      AI Assistant
+    </a>
+
+    <div class="sidebar-bottom">
+      <button class="btn-logout" onclick="handleLogout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Log Out
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <div class="page-header">
+      <h1>Dashboard <span id="greeting"></span></h1>
+      <div class="user-badge">
+        <div class="user-avatar" id="userAvatar">?</div>
+        <span id="userName">Loading...</span>
+      </div>
+    </div>
+
+    <!-- Balance stats -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Cash Balance</div>
+        <div class="stat-value green" id="cashBalance">$—</div>
+        <div class="stat-sub">Available to trade</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Portfolio Value</div>
+        <div class="stat-value" id="portfolioValue">$—</div>
+        <div class="stat-sub">Stocks you own</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Value</div>
+        <div class="stat-value" id="totalValue">$—</div>
+        <div class="stat-sub">Cash + Portfolio</div>
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="actions-row">
+      <a href="trade.html" class="action-btn">
+        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        Buy / Sell
+      </a>
+      <a href="history.html" class="action-btn">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        History
+      </a>
+      <a href="news.html" class="action-btn">
+        <svg viewBox="0 0 24 24"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg>
+        News
+      </a>
+      <a href="ai.html" class="action-btn">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        AI Assistant
+      </a>
+    </div>
+
+    <!-- Portfolio + Watchlist -->
+    <div class="grid-2col">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">My Portfolio</span>
+          <a href="trade.html" class="card-link">+ Buy Stock</a>
+        </div>
+        <div id="portfolioContent"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Watchlist</span>
+          <a href="trade.html" class="card-link">+ Add</a>
+        </div>
+        <div id="watchlistContent"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <div class="ticker-bar">
+    <div class="ticker-track" id="ticker"></div>
+  </div>
+
+  <script>
+    // requireAuth (from firebase.js) sends non-logged-in users to auth.html.
+    // If logged in, it calls our function with the user object.
+    requireAuth((user) => loadUserData(user));
+
+    async function loadUserData(user) {
+      const name = user.displayName || 'Trader';
+      document.getElementById('userName').textContent   = name;
+      document.getElementById('userAvatar').textContent = name[0].toUpperCase();
+      document.getElementById('greeting').textContent   = `— Hi, ${name.split(' ')[0]}`;
+
+      // Pull user doc from Firestore
+      const doc  = await db.collection('users').doc(user.uid).get();
+      if (!doc.exists) return;
+      const data = doc.data();
+
+      const cash      = data.cashBalance || 0;
+      const portfolio = data.portfolio   || {};
+      const watchlist = data.watchlist   || [];
+
+      document.getElementById('cashBalance').textContent = formatMoney(cash);
+
+      renderPortfolio(portfolio, cash);
+      renderWatchlist(watchlist);
+    }
+
+    function renderPortfolio(portfolio, cash) {
+      const container = document.getElementById('portfolioContent');
+      const symbols   = Object.keys(portfolio);
+
+      if (symbols.length === 0) {
+        container.innerHTML = `<div class="empty">No stocks yet.<br><a href="trade.html">Make your first trade →</a></div>`;
+        document.getElementById('portfolioValue').textContent = '$0.00';
+        document.getElementById('totalValue').textContent     = formatMoney(cash);
+        return;
+      }
+
+      // portfolio shape: { AAPL: { shares: 5, avgCost: 150 }, ... }
+      let totalPortfolioValue = 0;
+      const rows = symbols.map(sym => {
+        const { shares, avgCost } = portfolio[sym];
+        const value = shares * avgCost; // live prices will replace avgCost later
+        totalPortfolioValue += value;
+        return `
+          <tr>
+            <td><div class="stock-sym">${sym}</div><div class="stock-name">${shares} shares</div></td>
+            <td>${formatMoney(avgCost)}</td>
+            <td>${formatMoney(value)}</td>
+            <td class="green">—</td>
+          </tr>`;
+      }).join('');
+
+      container.innerHTML = `
+        <table>
+          <thead><tr><th>Stock</th><th>Avg Cost</th><th>Value</th><th>Gain/Loss</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+
+      document.getElementById('portfolioValue').textContent = formatMoney(totalPortfolioValue);
+      document.getElementById('totalValue').textContent     = formatMoney(cash + totalPortfolioValue);
+    }
+
+    function renderWatchlist(watchlist) {
+      const container = document.getElementById('watchlistContent');
+      if (watchlist.length === 0) {
+        container.innerHTML = `<div class="empty">Watchlist is empty.<br><a href="trade.html">Search for stocks →</a></div>`;
+        return;
+      }
+      // watchlist is an array of ticker symbols: ['AAPL', 'TSLA', ...]
+      container.innerHTML = watchlist.map(sym => `
+        <a href="trade.html?stock=${sym}" class="watchlist-item">
+          <div>
+            <div class="watch-sym">${sym}</div>
+            <div class="watch-name">Click to trade</div>
+          </div>
+          <div>
+            <div class="watch-price">—</div>
+            <div class="watch-change green">—</div>
+          </div>
+        </a>`).join('');
+    }
+
+    async function handleLogout() {
+      await auth.signOut();
+      window.location.href = 'auth.html';
+    }
+
+    // Formats a number as currency: 10000 → "$10,000.00"
+    function formatMoney(n) {
+      return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Static ticker — will be replaced with live Yahoo Finance data
+    const tickers = [
+      { sym: 'AAPL',  price: '213.49', change: '+1.24%', up: true  },
+      { sym: 'TSLA',  price: '248.73', change: '-0.87%', up: false },
+      { sym: 'GOOGL', price: '174.20', change: '+0.53%', up: true  },
+      { sym: 'AMZN',  price: '198.11', change: '+2.10%', up: true  },
+      { sym: 'MSFT',  price: '415.85', change: '-0.22%', up: false },
+      { sym: 'NVDA',  price: '875.32', change: '+3.45%', up: true  },
+    ];
+
+    const makeItems = () => tickers.map(t => `
+      <div class="ticker-item">
+        <span class="sym">${t.sym}</span>
+        <span>$${t.price}</span>
+        <span class="${t.up ? 'green' : 'red'}">${t.change}</span>
+      </div>`).join('');
+
+    document.getElementById('ticker').innerHTML = makeItems() + makeItems();
+  </script>
+
+</body>
+</html>

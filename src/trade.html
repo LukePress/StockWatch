@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StockWatch — Trade</title>
+
+  <script src="config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg:           #090e14;
+      --surface:      #0d1520;
+      --surface-2:    #111d2e;
+      --border:       #1a2840;
+      --accent:       #00d084;
+      --accent-dim:   rgba(0,208,132,0.1);
+      --danger:       #ff4d6a;
+      --danger-dim:   rgba(255,77,106,0.1);
+      --text:         #e8f0fe;
+      --text-muted:   #5a7498;
+      --font-display: 'Syne', sans-serif;
+      --font-mono:    'DM Mono', monospace;
+      --sidebar:      220px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; display: flex; }
+
+    /* ── SIDEBAR ── */
+    .sidebar { width: var(--sidebar); min-height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 24px 12px; position: fixed; top: 0; left: 0; }
+    .logo { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 28px; }
+    .logo-icon { width: 30px; height: 30px; background: var(--accent); border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+    .logo-icon svg { width: 16px; height: 16px; fill: var(--bg); }
+    .logo-text { font-family: var(--font-display); font-weight: 800; font-size: 17px; }
+    .logo-text span { color: var(--accent); }
+    .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 0 10px; margin: 20px 0 6px; }
+    .nav-link { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; color: var(--text-muted); text-decoration: none; font-size: 13px; transition: all 0.15s; margin-bottom: 2px; }
+    .nav-link svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .nav-link:hover { background: var(--surface-2); color: var(--text); }
+    .nav-link.active { background: var(--accent-dim); color: var(--accent); }
+    .sidebar-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+    .btn-logout { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; background: transparent; border: none; color: var(--text-muted); font-family: var(--font-mono); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+    .btn-logout:hover { background: var(--danger-dim); color: var(--danger); }
+    .btn-logout svg { width: 17px; height: 17px; }
+
+    /* ── MAIN ── */
+    .main { margin-left: var(--sidebar); flex: 1; padding: 32px; padding-bottom: 60px; animation: fadeIn 0.4s ease both; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+    .page-header h1 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.5px; }
+    .cash-badge { padding: 7px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 50px; font-size: 13px; }
+    .cash-badge span { color: var(--accent); font-family: var(--font-display); font-weight: 700; }
+
+    /* ── SEARCH ── */
+    .search-wrap { display: flex; gap: 10px; margin-bottom: 24px; }
+
+    .search-wrap input {
+      flex: 1; padding: 13px 16px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text);
+      font-family: var(--font-mono); font-size: 14px;
+      outline: none; text-transform: uppercase; transition: border-color 0.2s;
+    }
+
+    .search-wrap input::placeholder { text-transform: none; color: var(--text-muted); }
+    .search-wrap input:focus { border-color: var(--accent); }
+
+    .btn-search { padding: 13px 24px; background: var(--accent); color: var(--bg); border: none; border-radius: 10px; font-family: var(--font-display); font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+    .btn-search:hover { background: #00e894; }
+    .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── LAYOUT ── */
+    .trade-grid { display: grid; grid-template-columns: 1fr 320px; gap: 18px; }
+
+    /* ── CARD ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+    .card-title { font-family: var(--font-display); font-weight: 700; font-size: 14px; }
+    .card-body { padding: 20px; }
+
+    /* ── STOCK INFO ── */
+    .stock-hero { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+    .stock-hero-sym { font-family: var(--font-display); font-weight: 800; font-size: 32px; letter-spacing: -1px; }
+    .stock-hero-name { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+    .stock-price { font-family: var(--font-display); font-weight: 800; font-size: 32px; letter-spacing: -1px; text-align: right; }
+    .stock-change { font-size: 14px; margin-top: 4px; text-align: right; }
+
+    .stock-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .stock-stat { background: var(--surface-2); border-radius: 10px; padding: 14px; }
+    .stock-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 6px; }
+    .stock-stat-value { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+
+    .green { color: var(--accent); }
+    .red   { color: var(--danger); }
+
+    /* Watchlist button */
+    .btn-watchlist { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; cursor: pointer; transition: all 0.2s; }
+    .btn-watchlist:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-watchlist.watching { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .btn-watchlist svg { width: 14px; height: 14px; }
+
+    /* ── TRADE PANEL ── */
+    .trade-tabs { display: flex; margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+    .trade-tab { flex: 1; padding: 11px; background: transparent; border: none; font-family: var(--font-display); font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.2s; color: var(--text-muted); }
+    .trade-tab.buy.active  { background: var(--accent); color: var(--bg); }
+    .trade-tab.sell.active { background: var(--danger);  color: #fff; }
+
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; }
+    .field input { width: 100%; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-mono); font-size: 14px; outline: none; transition: border-color 0.2s; }
+    .field input:focus { border-color: var(--accent); }
+    .field input:read-only { opacity: 0.6; cursor: not-allowed; }
+
+    .order-summary { background: var(--surface-2); border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 13px; }
+    .order-row { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--text-muted); }
+    .order-row:last-child { margin-bottom: 0; font-family: var(--font-display); font-weight: 700; color: var(--text); font-size: 14px; }
+
+    .btn-trade { width: 100%; padding: 14px; border: none; border-radius: 10px; font-family: var(--font-display); font-weight: 700; font-size: 15px; cursor: pointer; transition: all 0.2s; }
+    .btn-trade.buy  { background: var(--accent); color: var(--bg); }
+    .btn-trade.sell { background: var(--danger);  color: #fff; }
+    .btn-trade:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-trade:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .msg { padding: 11px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none; }
+    .msg.error   { display: block; background: var(--danger-dim); border: 1px solid rgba(255,77,106,0.3); color: var(--danger); }
+    .msg.success { display: block; background: var(--accent-dim); border: 1px solid rgba(0,208,132,0.3); color: var(--accent); }
+
+    .placeholder { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 14px; }
+    .placeholder svg { width: 40px; height: 40px; stroke: var(--border); fill: none; margin-bottom: 16px; display: block; margin-left: auto; margin-right: auto; }
+
+    /* ── TICKER ── */
+    .ticker-bar { position: fixed; bottom: 0; left: var(--sidebar); right: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 7px 0; overflow: hidden; z-index: 50; }
+    .ticker-track { display: flex; gap: 36px; animation: ticker 30s linear infinite; width: max-content; }
+
+    @keyframes ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    .ticker-item { display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; color: var(--text-muted); }
+    .ticker-item .sym { font-family: var(--font-display); font-weight: 700; color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <!-- ── SIDEBAR ── -->
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><rect x="3" y="8" width="4" height="10" rx="1"/><rect x="10" y="4" width="4" height="14" rx="1"/><rect x="17" y="6" width="4" height="9" rx="1"/><rect x="4.5" y="4" width="1" height="5"/><rect x="4.5" y="17" width="1" height="4"/><rect x="11.5" y="1" width="1" height="4"/><rect x="11.5" y="17" width="1" height="4"/><rect x="18.5" y="3" width="1" height="4"/><rect x="18.5" y="14" width="1" height="4"/></svg>
+      </div>
+      <div class="logo-text">Stock<span>Watch</span></div>
+    </div>
+
+    <span class="nav-label">Main</span>
+    <a href="dashboard.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a>
+    <a href="trade.html" class="nav-link active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      Trade
+    </a>
+    <a href="history.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
+    </a>
+
+    <span class="nav-label">Tools</span>
+    <a href="news.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+      News
+    </a>
+    <a href="ai.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      AI Assistant
+    </a>
+
+    <div class="sidebar-bottom">
+      <button class="btn-logout" onclick="handleLogout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Log Out
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <div class="page-header">
+      <h1>Trade</h1>
+      <div class="cash-badge">Cash: <span id="cashDisplay">$—</span></div>
+    </div>
+
+    <div class="search-wrap">
+      <input id="searchInput" type="text" placeholder="Enter a ticker symbol (e.g. AAPL, TSLA, MSFT)" maxlength="10"/>
+      <button class="btn-search" id="searchBtn" onclick="searchStock()">Search</button>
+    </div>
+
+    <div class="trade-grid">
+
+      <!-- Stock Info -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title" id="stockCardTitle">Stock Info</span>
+          <button class="btn-watchlist" id="watchlistBtn" onclick="toggleWatchlist()" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <span id="watchlistBtnText">Add to Watchlist</span>
+          </button>
+        </div>
+        <div class="card-body" id="stockInfoBody">
+          <div class="placeholder">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Search for a stock symbol above to get started.
+          </div>
+        </div>
+      </div>
+
+      <!-- Trade Panel -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Place Order</span>
+        </div>
+        <div class="card-body">
+          <div class="trade-tabs">
+            <button class="trade-tab buy active" id="buyTab"  onclick="switchTradeTab('buy')">Buy</button>
+            <button class="trade-tab sell"       id="sellTab" onclick="switchTradeTab('sell')">Sell</button>
+          </div>
+
+          <div class="msg" id="tradeMsg"></div>
+
+          <div class="field">
+            <label>Symbol</label>
+            <input id="orderSymbol" type="text" readonly placeholder="Search for a stock first"/>
+          </div>
+          <div class="field">
+            <label>Price Per Share</label>
+            <input id="orderPrice" type="text" readonly placeholder="—"/>
+          </div>
+          <div class="field">
+            <label>Number of Shares</label>
+            <input id="orderShares" type="number" min="1" step="1" placeholder="0" oninput="updateOrderSummary()"/>
+          </div>
+
+          <div class="order-summary">
+            <div class="order-row"><span>Price per share</span><span id="summaryPrice">—</span></div>
+            <div class="order-row"><span>Shares</span><span id="summaryShares">0</span></div>
+            <div class="order-row"><span>Total</span><span id="summaryTotal">$0.00</span></div>
+          </div>
+
+          <button class="btn-trade buy" id="tradeBtn" onclick="executeTrade()" disabled>
+            Select a stock first
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <div class="ticker-bar">
+    <div class="ticker-track" id="ticker"></div>
+  </div>
+
+  <script>
+    // FINNHUB_KEY is loaded from config.js
+    // Finnhub API docs: finnhub.io/docs/api
+
+    let currentUser     = null;
+    let userData        = null;
+    let currentStock    = null;
+    let currentTradeTab = 'buy';
+
+    // ── INIT ──────────────────────────────────────────────────
+    requireAuth(async (user) => {
+      currentUser = user;
+      const doc = await db.collection('users').doc(user.uid).get();
+      userData  = doc.data();
+      document.getElementById('cashDisplay').textContent = formatMoney(userData.cashBalance);
+
+      // Auto-search if coming from a watchlist link (e.g. trade.html?stock=AAPL)
+      const params  = new URLSearchParams(window.location.search);
+      const preload = params.get('stock');
+      if (preload) {
+        document.getElementById('searchInput').value = preload.toUpperCase();
+        searchStock();
+      }
+    });
+
+    // ── SEARCH ────────────────────────────────────────────────
+    // Calls two Finnhub endpoints:
+    //   /quote        → current price, change, high, low, open, prevClose
+    //   /stock/profile2 → company name
+    async function searchStock() {
+      const symbol = document.getElementById('searchInput').value.trim().toUpperCase();
+      if (!symbol) return;
+
+      const btn = document.getElementById('searchBtn');
+      btn.textContent = 'Loading...';
+      btn.disabled    = true;
+
+      try {
+        // Fetch quote and company profile at the same time
+        const [quoteRes, profileRes] = await Promise.all([
+          fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`),
+          fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${FINNHUB_KEY}`)
+        ]);
+
+        const quote   = await quoteRes.json();
+        const profile = await profileRes.json();
+
+        // Finnhub returns c: 0 when a symbol doesn't exist
+        if (!quote.c || quote.c === 0) {
+          showStockError(`No results for "${symbol}". Check the ticker symbol.`);
+          return;
+        }
+
+        currentStock = {
+          symbol,
+          name:      profile.name || symbol,
+          price:     quote.c,           // current price
+          change:    quote.d,           // price change
+          changePct: quote.dp,          // % change
+          high:      quote.h,           // day high
+          low:       quote.l,           // day low
+          open:      quote.o,           // day open
+          prevClose: quote.pc,          // previous close
+        };
+
+        renderStockInfo();
+        populateOrderPanel();
+
+      } catch (err) {
+        showStockError('Failed to fetch stock data. Check your API key or internet connection.');
+        console.error(err);
+      } finally {
+        btn.textContent = 'Search';
+        btn.disabled    = false;
+      }
+    }
+
+    // Press Enter to search
+    document.getElementById('searchInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') searchStock();
+    });
+
+    // ── RENDER STOCK INFO ──────────────────────────────────────
+    function renderStockInfo() {
+      const s   = currentStock;
+      const up  = s.change >= 0;
+      const cls = up ? 'green' : 'red';
+      const sign = up ? '+' : '';
+
+      document.getElementById('stockCardTitle').textContent = `${s.symbol} — Live Quote`;
+
+      // Update watchlist button state
+      const watching = userData.watchlist && userData.watchlist.includes(s.symbol);
+      const watchBtn = document.getElementById('watchlistBtn');
+      watchBtn.style.display = 'flex';
+      watchBtn.className     = `btn-watchlist ${watching ? 'watching' : ''}`;
+      document.getElementById('watchlistBtnText').textContent = watching ? '★ Watching' : 'Add to Watchlist';
+
+      document.getElementById('stockInfoBody').innerHTML = `
+        <div class="stock-hero">
+          <div>
+            <div class="stock-hero-sym">${s.symbol}</div>
+            <div class="stock-hero-name">${s.name}</div>
+          </div>
+          <div>
+            <div class="stock-price">${formatMoney(s.price)}</div>
+            <div class="stock-change ${cls}">${sign}${formatMoney(s.change)} (${sign}${s.changePct.toFixed(2)}%)</div>
+          </div>
+        </div>
+        <div class="stock-stats">
+          <div class="stock-stat"><div class="stock-stat-label">Open</div><div class="stock-stat-value">${formatMoney(s.open)}</div></div>
+          <div class="stock-stat"><div class="stock-stat-label">High</div><div class="stock-stat-value green">${formatMoney(s.high)}</div></div>
+          <div class="stock-stat"><div class="stock-stat-label">Low</div><div class="stock-stat-value red">${formatMoney(s.low)}</div></div>
+          <div class="stock-stat"><div class="stock-stat-label">Prev Close</div><div class="stock-stat-value">${formatMoney(s.prevClose)}</div></div>
+          <div class="stock-stat"><div class="stock-stat-label">Change</div><div class="stock-stat-value ${cls}">${sign}${s.changePct.toFixed(2)}%</div></div>
+          <div class="stock-stat"><div class="stock-stat-label">You Own</div><div class="stock-stat-value">${getOwnedShares(s.symbol)} shares</div></div>
+        </div>`;
+    }
+
+    // ── ORDER PANEL ────────────────────────────────────────────
+    function populateOrderPanel() {
+      document.getElementById('orderSymbol').value = currentStock.symbol;
+      document.getElementById('orderPrice').value  = formatMoney(currentStock.price);
+      document.getElementById('orderShares').value = '';
+      updateOrderSummary();
+    }
+
+    function updateOrderSummary() {
+      const shares = parseInt(document.getElementById('orderShares').value) || 0;
+      const price  = currentStock ? currentStock.price : 0;
+      document.getElementById('summaryPrice').textContent  = currentStock ? formatMoney(price) : '—';
+      document.getElementById('summaryShares').textContent = shares;
+      document.getElementById('summaryTotal').textContent  = formatMoney(shares * price);
+      updateTradeButton();
+    }
+
+    function switchTradeTab(tab) {
+      currentTradeTab = tab;
+      document.getElementById('buyTab').classList.toggle('active',  tab === 'buy');
+      document.getElementById('sellTab').classList.toggle('active', tab === 'sell');
+      clearMsg();
+      updateTradeButton();
+    }
+
+    function updateTradeButton() {
+      const btn    = document.getElementById('tradeBtn');
+      const shares = parseInt(document.getElementById('orderShares').value) || 0;
+      btn.className = `btn-trade ${currentTradeTab}`;
+
+      if (!currentStock) {
+        btn.textContent = 'Select a stock first';
+        btn.disabled    = true;
+        return;
+      }
+
+      if (shares < 1) {
+        btn.textContent = currentTradeTab === 'buy' ? 'Enter shares to buy' : 'Enter shares to sell';
+        btn.disabled    = true;
+        return;
+      }
+
+      const total = shares * currentStock.price;
+
+      if (currentTradeTab === 'buy') {
+        const canAfford = total <= userData.cashBalance;
+        btn.textContent = canAfford
+          ? `Buy ${shares} share${shares > 1 ? 's' : ''} for ${formatMoney(total)}`
+          : 'Insufficient funds';
+        btn.disabled = !canAfford;
+      } else {
+        const owned    = getOwnedShares(currentStock.symbol);
+        const hasEnough = shares <= owned;
+        btn.textContent = hasEnough
+          ? `Sell ${shares} share${shares > 1 ? 's' : ''} for ${formatMoney(total)}`
+          : `You only own ${owned} share${owned !== 1 ? 's' : ''}`;
+        btn.disabled = !hasEnough;
+      }
+    }
+
+    // ── EXECUTE TRADE ──────────────────────────────────────────
+    async function executeTrade() {
+      const shares = parseInt(document.getElementById('orderShares').value);
+      const price  = currentStock.price;
+      const symbol = currentStock.symbol;
+      const total  = shares * price;
+      const btn    = document.getElementById('tradeBtn');
+
+      btn.disabled    = true;
+      btn.textContent = 'Processing...';
+      clearMsg();
+
+      try {
+        if (currentTradeTab === 'buy') {
+          await executeBuy(symbol, shares, price, total);
+        } else {
+          await executeSell(symbol, shares, price, total);
+        }
+      } catch (err) {
+        showMsg('Trade failed. Please try again.', 'error');
+        console.error(err);
+      }
+
+      updateTradeButton();
+    }
+
+    async function executeBuy(symbol, shares, price, total) {
+      const uid      = currentUser.uid;
+      const existing = userData.portfolio[symbol];
+
+      // Calculate new weighted average cost
+      let newShares, newAvgCost;
+      if (existing) {
+        newShares  = existing.shares + shares;
+        newAvgCost = ((existing.shares * existing.avgCost) + (shares * price)) / newShares;
+      } else {
+        newShares  = shares;
+        newAvgCost = price;
+      }
+
+      await db.collection('users').doc(uid).update({
+        cashBalance:                     firebase.firestore.FieldValue.increment(-total),
+        [`portfolio.${symbol}.shares`]:  newShares,
+        [`portfolio.${symbol}.avgCost`]: newAvgCost,
+      });
+
+      // Log to transactions subcollection (used by history.html)
+      await db.collection('users').doc(uid).collection('transactions').add({
+        type: 'buy', symbol, shares, price, total,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Update local state so UI reflects change immediately
+      userData.cashBalance -= total;
+      userData.portfolio[symbol] = { shares: newShares, avgCost: newAvgCost };
+      document.getElementById('cashDisplay').textContent = formatMoney(userData.cashBalance);
+      renderStockInfo();
+      showMsg(`Bought ${shares} share${shares > 1 ? 's' : ''} of ${symbol}!`, 'success');
+    }
+
+    async function executeSell(symbol, shares, price, total) {
+      const uid             = currentUser.uid;
+      const existing        = userData.portfolio[symbol];
+      const remainingShares = existing.shares - shares;
+
+      if (remainingShares === 0) {
+        // Sold everything — remove the stock from portfolio
+        await db.collection('users').doc(uid).update({
+          cashBalance:             firebase.firestore.FieldValue.increment(total),
+          [`portfolio.${symbol}`]: firebase.firestore.FieldValue.delete(),
+        });
+        delete userData.portfolio[symbol];
+      } else {
+        await db.collection('users').doc(uid).update({
+          cashBalance:                    firebase.firestore.FieldValue.increment(total),
+          [`portfolio.${symbol}.shares`]: remainingShares,
+        });
+        userData.portfolio[symbol].shares = remainingShares;
+      }
+
+      await db.collection('users').doc(uid).collection('transactions').add({
+        type: 'sell', symbol, shares, price, total,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+
+      userData.cashBalance += total;
+      document.getElementById('cashDisplay').textContent = formatMoney(userData.cashBalance);
+      renderStockInfo();
+      showMsg(`Sold ${shares} share${shares > 1 ? 's' : ''} of ${symbol} for ${formatMoney(total)}!`, 'success');
+    }
+
+    // ── WATCHLIST ──────────────────────────────────────────────
+    async function toggleWatchlist() {
+      if (!currentStock) return;
+      const symbol   = currentStock.symbol;
+      const uid      = currentUser.uid;
+      const watching = userData.watchlist && userData.watchlist.includes(symbol);
+
+      if (watching) {
+        await db.collection('users').doc(uid).update({
+          watchlist: firebase.firestore.FieldValue.arrayRemove(symbol),
+        });
+        userData.watchlist = userData.watchlist.filter(s => s !== symbol);
+      } else {
+        // arrayUnion prevents duplicate entries automatically
+        await db.collection('users').doc(uid).update({
+          watchlist: firebase.firestore.FieldValue.arrayUnion(symbol),
+        });
+        userData.watchlist = [...(userData.watchlist || []), symbol];
+      }
+
+      renderStockInfo();
+    }
+
+    // ── HELPERS ────────────────────────────────────────────────
+    function getOwnedShares(symbol) {
+      return userData.portfolio && userData.portfolio[symbol]
+        ? userData.portfolio[symbol].shares : 0;
+    }
+
+    function showStockError(msg) {
+      document.getElementById('stockInfoBody').innerHTML = `<div class="placeholder">${msg}</div>`;
+      document.getElementById('stockCardTitle').textContent = 'Stock Info';
+      document.getElementById('watchlistBtn').style.display = 'none';
+    }
+
+    function showMsg(text, type) {
+      const el = document.getElementById('tradeMsg');
+      el.textContent = text;
+      el.className   = `msg ${type}`;
+    }
+
+    function clearMsg() {
+      const el = document.getElementById('tradeMsg');
+      el.className = 'msg';
+      el.textContent = '';
+    }
+
+    function formatMoney(n) {
+      return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    async function handleLogout() {
+      await auth.signOut();
+      window.location.href = 'auth.html';
+    }
+
+    // ── TICKER ────────────────────────────────────────────────
+    const tickers = [
+      { sym: 'AAPL',  price: '213.49', change: '+1.24%', up: true  },
+      { sym: 'TSLA',  price: '248.73', change: '-0.87%', up: false },
+      { sym: 'GOOGL', price: '174.20', change: '+0.53%', up: true  },
+      { sym: 'AMZN',  price: '198.11', change: '+2.10%', up: true  },
+      { sym: 'MSFT',  price: '415.85', change: '-0.22%', up: false },
+      { sym: 'NVDA',  price: '875.32', change: '+3.45%', up: true  },
+    ];
+
+    const makeItems = () => tickers.map(t => `
+      <div class="ticker-item">
+        <span class="sym">${t.sym}</span>
+        <span>$${t.price}</span>
+        <span class="${t.up ? 'green' : 'red'}">${t.change}</span>
+      </div>`).join('');
+
+    document.getElementById('ticker').innerHTML = makeItems() + makeItems();
+  </script>
+
+</body>
+</html>
