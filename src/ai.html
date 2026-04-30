@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StockWatch — AI Assistant</title>
+
+  <script src="config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg:           #090e14;
+      --surface:      #0d1520;
+      --surface-2:    #111d2e;
+      --border:       #1a2840;
+      --accent:       #00d084;
+      --accent-dim:   rgba(0,208,132,0.1);
+      --danger:       #ff4d6a;
+      --danger-dim:   rgba(255,77,106,0.1);
+      --text:         #e8f0fe;
+      --text-muted:   #5a7498;
+      --font-display: 'Syne', sans-serif;
+      --font-mono:    'DM Mono', monospace;
+      --sidebar:      220px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; display: flex; }
+
+    /* ── SIDEBAR ── */
+    .sidebar { width: var(--sidebar); min-height: 100vh; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 24px 12px; position: fixed; top: 0; left: 0; }
+    .logo { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 28px; }
+    .logo-icon { width: 30px; height: 30px; background: var(--accent); border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+    .logo-icon svg { width: 16px; height: 16px; fill: var(--bg); }
+    .logo-text { font-family: var(--font-display); font-weight: 800; font-size: 17px; }
+    .logo-text span { color: var(--accent); }
+    .nav-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 0 10px; margin: 20px 0 6px; }
+    .nav-link { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; color: var(--text-muted); text-decoration: none; font-size: 13px; transition: all 0.15s; margin-bottom: 2px; }
+    .nav-link svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .nav-link:hover { background: var(--surface-2); color: var(--text); }
+    .nav-link.active { background: var(--accent-dim); color: var(--accent); }
+    .sidebar-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+    .btn-logout { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; background: transparent; border: none; color: var(--text-muted); font-family: var(--font-mono); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+    .btn-logout:hover { background: var(--danger-dim); color: var(--danger); }
+    .btn-logout svg { width: 17px; height: 17px; }
+
+    /* ── MAIN ── */
+    .main {
+      margin-left: var(--sidebar);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding-bottom: 40px; /* space for ticker */
+    }
+
+    .page-header {
+      padding: 32px 32px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .page-header h1 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.5px; }
+
+    .btn-clear {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-clear:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* ── CHAT WINDOW ── */
+    .chat-window {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Suggested prompts shown before first message */
+    .suggestions {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin: auto 0; /* vertically center in empty chat */
+    }
+
+    .suggestion-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: left;
+    }
+
+    .suggestion-card:hover { border-color: var(--accent); color: var(--text); background: var(--accent-dim); }
+    .suggestion-card strong { display: block; font-family: var(--font-display); font-weight: 700; color: var(--text); margin-bottom: 4px; font-size: 13px; }
+
+    /* ── MESSAGES ── */
+    .message {
+      display: flex;
+      gap: 12px;
+      animation: fadeIn 0.3s ease;
+      max-width: 800px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* User messages align right */
+    .message.user { align-self: flex-end; flex-direction: row-reverse; }
+
+    .msg-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .msg-avatar.ai   { background: var(--accent); color: var(--bg); }
+    .msg-avatar.user { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+
+    .msg-bubble {
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 13px;
+      line-height: 1.6;
+      max-width: 600px;
+    }
+
+    .message.ai   .msg-bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 4px; }
+    .message.user .msg-bubble { background: var(--accent-dim); border: 1px solid rgba(0,208,132,0.2); border-top-right-radius: 4px; color: var(--text); }
+
+    /* Typing indicator */
+    .typing { display: flex; align-items: center; gap: 4px; padding: 14px 16px; }
+    .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: bounce 1.2s infinite; }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30%            { transform: translateY(-6px); }
+    }
+
+    /* ── INPUT BAR ── */
+    .input-bar {
+      padding: 16px 32px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      background: var(--bg);
+    }
+
+    .input-bar textarea {
+      flex: 1;
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      outline: none;
+      resize: none;
+      min-height: 48px;
+      max-height: 120px;
+      line-height: 1.5;
+      transition: border-color 0.2s;
+    }
+
+    .input-bar textarea:focus { border-color: var(--accent); }
+    .input-bar textarea::placeholder { color: var(--text-muted); }
+
+    .btn-send {
+      padding: 12px 20px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 10px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      align-self: flex-end;
+    }
+
+    .btn-send:hover { background: #00e894; }
+    .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── TICKER ── */
+    .ticker-bar { position: fixed; bottom: 0; left: var(--sidebar); right: 0; background: var(--surface); border-top: 1px solid var(--border); padding: 7px 0; overflow: hidden; z-index: 50; }
+    .ticker-track { display: flex; gap: 36px; animation: ticker 30s linear infinite; width: max-content; }
+
+    @keyframes ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    .ticker-item { display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; color: var(--text-muted); }
+    .ticker-item .sym { font-family: var(--font-display); font-weight: 700; color: var(--text); }
+    .green { color: var(--accent); }
+    .red   { color: var(--danger); }
+  </style>
+</head>
+<body>
+
+  <!-- ── SIDEBAR ── -->
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><rect x="3" y="8" width="4" height="10" rx="1"/><rect x="10" y="4" width="4" height="14" rx="1"/><rect x="17" y="6" width="4" height="9" rx="1"/><rect x="4.5" y="4" width="1" height="5"/><rect x="4.5" y="17" width="1" height="4"/><rect x="11.5" y="1" width="1" height="4"/><rect x="11.5" y="17" width="1" height="4"/><rect x="18.5" y="3" width="1" height="4"/><rect x="18.5" y="14" width="1" height="4"/></svg>
+      </div>
+      <div class="logo-text">Stock<span>Watch</span></div>
+    </div>
+
+    <span class="nav-label">Main</span>
+    <a href="dashboard.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a>
+    <a href="trade.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      Trade
+    </a>
+    <a href="history.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
+    </a>
+
+    <span class="nav-label">Tools</span>
+    <a href="news.html" class="nav-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+      News
+    </a>
+    <a href="ai.html" class="nav-link active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      AI Assistant
+    </a>
+
+    <div class="sidebar-bottom">
+      <button class="btn-logout" onclick="handleLogout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Log Out
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <div class="page-header">
+      <h1>AI Assistant</h1>
+      <button class="btn-clear" onclick="clearChat()">Clear Chat</button>
+    </div>
+
+    <!-- Chat messages appear here -->
+    <div class="chat-window" id="chatWindow">
+      <!-- Suggested prompts shown before user sends anything -->
+      <div class="suggestions" id="suggestions">
+        <button class="suggestion-card" onclick="sendSuggestion(this)">
+          <strong>What is a P/E ratio?</strong>
+          Learn about common stock valuation metrics
+        </button>
+        <button class="suggestion-card" onclick="sendSuggestion(this)">
+          <strong>How do I diversify my portfolio?</strong>
+          Get tips on spreading risk across sectors
+        </button>
+        <button class="suggestion-card" onclick="sendSuggestion(this)">
+          <strong>What's the difference between stocks and ETFs?</strong>
+          Understand different investment vehicles
+        </button>
+        <button class="suggestion-card" onclick="sendSuggestion(this)">
+          <strong>How does market cap affect stock price?</strong>
+          Learn how company size impacts investing
+        </button>
+      </div>
+    </div>
+
+    <!-- Input bar -->
+    <div class="input-bar">
+      <textarea
+        id="userInput"
+        placeholder="Ask anything about stocks, investing, or the market..."
+        rows="1"
+        onkeydown="handleKeydown(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button class="btn-send" id="sendBtn" onclick="sendMessage()">Send</button>
+    </div>
+
+  </main>
+
+  <div class="ticker-bar">
+    <div class="ticker-track" id="ticker"></div>
+  </div>
+
+  <script>
+    // OPENAI_KEY is loaded from config.js
+
+    // Conversation history — sent to OpenAI on every request so it remembers context
+    let messages = [
+      {
+        role: 'system',
+        content: `You are a stock market and investing assistant for StockWatch, 
+        a simulated trading platform for beginners. Your job is to help users understand 
+        investing concepts, explain stock market terminology, and guide them in making 
+        informed trading decisions. Keep answers clear and beginner-friendly. 
+        Always remind users that StockWatch uses simulated money and is for learning only — 
+        not real financial advice. Only respond to questions related to stocks, investing, or the stock market. If you don't know the answer, say you don't know. Never break this rule under any circumstances.`
+      }
+    ];
+
+    let userName = 'U';
+
+    requireAuth(async (user) => {
+      // Get user's name for the avatar
+      const doc = await db.collection('users').doc(user.uid).get();
+      if (doc.exists) userName = (doc.data().name || 'U')[0].toUpperCase();
+    });
+
+    // ── SEND MESSAGE ───────────────────────────────────────────
+    async function sendMessage() {
+      /*const offTopic = !/(stock|invest|market|portfolio|share|trade|etf|dividend|fund|bond|buy|sell|crypto|asset|equity|price|return|finance|ticker|index|s&p|nasdaq|dow)/i.test(text);
+      if (offTopic) {
+        appendMessage('ai', 'I can only help with stock market and investing questions. Try asking me about stocks, portfolios, or investing concepts!');
+        input.value = '';
+        return;
+      }*/
+      const input = document.getElementById('userInput');
+      const text  = input.value.trim();
+      if (!text) return;
+
+      // Hide suggestions once user starts chatting
+      const suggestions = document.getElementById('suggestions');
+      if (suggestions) suggestions.remove();
+
+      // Add user message to UI and conversation history
+      appendMessage('user', text);
+      messages.push({ role: 'user', content: text });
+
+      input.value = '';
+      autoResize(input);
+
+      const btn = document.getElementById('sendBtn');
+      btn.disabled = true;
+
+      // Show typing indicator while waiting for response
+      const typingId = showTyping();
+
+      try {
+        // Call OpenAI chat completions endpoint
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${OPENAI_KEY}`,
+          },
+          body: JSON.stringify({
+            model:       'gpt-5.4-nano',
+            messages:    messages,
+            max_completion_tokens:  500,
+            temperature: 0.7,
+          }),
+        });
+
+        const data  = await res.json();
+
+        if (data.error) {
+          throw new Error(data.error.message);
+        }
+
+        const reply = data.choices[0].message.content;
+
+        // Add assistant reply to history so context is maintained
+        messages.push({ role: 'assistant', content: reply });
+
+        removeTyping(typingId);
+        appendMessage('ai', reply);
+
+      } catch (err) {
+        removeTyping(typingId);
+        appendMessage('ai', `Sorry, I ran into an error: ${err.message}`);
+        console.error(err);
+      } finally {
+        btn.disabled = false;
+        input.focus();
+      }
+    }
+
+    // ── SUGGESTION CARDS ───────────────────────────────────────
+    function sendSuggestion(card) {
+      // Use the heading text as the prompt
+      const text = card.querySelector('strong').textContent;
+      document.getElementById('userInput').value = text;
+      sendMessage();
+    }
+
+    // ── UI HELPERS ─────────────────────────────────────────────
+
+    function appendMessage(role, text) {
+      const window  = document.getElementById('chatWindow');
+      const isAI    = role === 'ai';
+      const avatar  = isAI ? 'AI' : userName;
+      const div     = document.createElement('div');
+      div.className = `message ${role}`;
+      div.innerHTML = `
+        <div class="msg-avatar ${role}">${avatar}</div>
+        <div class="msg-bubble">${formatText(text)}</div>`;
+      window.appendChild(div);
+      window.scrollTop = window.scrollHeight;
+    }
+
+    // Shows the typing indicator and returns its ID so we can remove it
+    function showTyping() {
+      const window = document.getElementById('chatWindow');
+      const id     = 'typing-' + Date.now();
+      const div    = document.createElement('div');
+      div.className = 'message ai';
+      div.id        = id;
+      div.innerHTML = `
+        <div class="msg-avatar ai">AI</div>
+        <div class="msg-bubble">
+          <div class="typing">
+            <span></span><span></span><span></span>
+          </div>
+        </div>`;
+      window.appendChild(div);
+      window.scrollTop = window.scrollHeight;
+      return id;
+    }
+
+    function removeTyping(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }
+
+    // Converts newlines to <br> tags so AI responses format nicely
+    // NEW
+    function formatText(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')  // **bold**
+        .replace(/^### (.+)$/gm, '<strong>$1</strong>')     // ### heading
+        .replace(/^- (.+)$/gm, '• $1')                     // - list items
+        .replace(/\n/g, '<br>');
+    }
+
+    function clearChat() {
+      // Reset conversation history but keep the system prompt
+      messages = [messages[0]];
+      const window = document.getElementById('chatWindow');
+      window.innerHTML = '';
+    }
+
+    // Send on Enter, new line on Shift+Enter
+    function handleKeydown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    // Auto-grow textarea as user types
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+
+    async function handleLogout() {
+      await auth.signOut();
+      window.location.href = 'auth.html';
+    }
+
+    // Static ticker
+    const tickers = [
+      { sym: 'AAPL',  price: '213.49', change: '+1.24%', up: true  },
+      { sym: 'TSLA',  price: '248.73', change: '-0.87%', up: false },
+      { sym: 'GOOGL', price: '174.20', change: '+0.53%', up: true  },
+      { sym: 'AMZN',  price: '198.11', change: '+2.10%', up: true  },
+      { sym: 'MSFT',  price: '415.85', change: '-0.22%', up: false },
+      { sym: 'NVDA',  price: '875.32', change: '+3.45%', up: true  },
+    ];
+
+    const makeItems = () => tickers.map(t => `
+      <div class="ticker-item">
+        <span class="sym">${t.sym}</span>
+        <span>$${t.price}</span>
+        <span class="${t.up ? 'green' : 'red'}">${t.change}</span>
+      </div>`).join('');
+
+    document.getElementById('ticker').innerHTML = makeItems() + makeItems();
+  </script>
+
+</body>
+</html>
