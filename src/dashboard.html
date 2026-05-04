@@ -321,7 +321,7 @@
         const value = shares * avgCost; // live prices will replace avgCost later
         totalPortfolioValue += value;
         return `
-          <tr>
+          <tr onclick="window.location.href='trade.html?stock=${sym}'" style="cursor:pointer">
             <td><div class="stock-sym">${sym}</div><div class="stock-name">${shares} shares</div></td>
             <td>${formatMoney(avgCost)}</td>
             <td>${formatMoney(value)}</td>
